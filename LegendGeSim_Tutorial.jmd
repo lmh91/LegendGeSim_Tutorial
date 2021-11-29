@@ -1,4 +1,6 @@
 
+# LegendGeSim.jl Tutorial
+
 ```julia
 using LegendGeSim
 using LegendTestData
@@ -7,6 +9,134 @@ using LegendHDF5IO
 using Plots
 using HDF5
 using Unitful
+```
+
+## Get example configuration files and Geant4 output
+
+We need 3 input files:
+1) Detector meta data configuration file
+2) Energy depositions hits (e.g. output from G4Simple)
+3) LegendGeSim-configuration file
+
+```julia
+testdata_path = joinpath(LegendTestData.legend_test_data_path(), "data", "ldsim")
+LegendGeSimExampleConfigFolder = joinpath(dirname(dirname(pathof(LegendGeSim))), "examples/configs")
+
+detector_metadata_filename = "invcoax-metadata.json"
+geant4_output_hit_filename = "single-invcoax-th228-geant4.csv"
+cp(joinpath(testdata_path, detector_metadata_filename), detector_metadata_filename, force = true)
+cp(joinpath(testdata_path, geant4_output_hit_filename), geant4_output_hit_filename, force = true)
+
+sim_settings_ssd_filename = "SSD_NoiseSim.json"
+sim_settings_siggen_filename = "siggen_NoiseSim.json"
+cp(joinpath(LegendGeSimExampleConfigFolder, sim_settings_ssd_filename), sim_settings_ssd_filename, force = true)
+cp(joinpath(LegendGeSimExampleConfigFolder, sim_settings_siggen_filename), sim_settings_siggen_filename, force = true);
+```
+
+## Load the configuration Files
+
+```julia
+config = LegendGeSim.load_config(detector_metadata_filename, sim_settings_ssd_filename);
+# config = LegendGeSim.load_config(detector_metadata_filename, sim_settings_siggen_filename);
+```
+
+```julia
+sim = LegendGeSim.simulate_fields(config);
+```
+
+```julia
+plot(
+    plot(sim.detector),
+    plot(sim.point_types, full_det = true),
+    plot(sim.electric_potential, full_det = true),
+    begin
+        plot(sim.electric_field, full_det = true, φ = 0u"°")
+        SSD.plot_electric_fieldlines!(sim, full_det = true, φ = 0.0)
+    end,
+    plot(sim.weighting_potentials[1], full_det = true),
+    plot(sim.weighting_potentials[2], full_det = true),
+    size = (1000, 1400),
+    layout = (3, 2),
+    full_det = true
+)
+```
+
+```julia
+C = LegendGeSim.capacitance_matrix(sim)
+```
+
+## Simulate Waveforms
+
+### Load the energy depositions hits 
+
+```julia
+geant4_output_evt_table = LegendGeSim.read_pet(geant4_output_hit_filename) # could also in the HDF5 Format -> LegendTextIO.jl & LegendHDF5IO.jl
+```
+
+```julia
+plot(geant4_output_evt_table, size = (1200, 1200))
+```
+
+### Preprocessing of the events: `pet` -> `stp` 
+In case of SSD: Filters depositions not located inside the detector
+
+```julia
+stp_table = LegendGeSim.pet_to_stp(geant4_output_evt_table, sim);
+```
+
+### Simulation of charge drifts through the detector and generate signals (waveforms): `stp` -> `pss`
+Either via SSD or via Siggen.
+These are "perfect" waveforms: No noise.
+
+```julia
+pss_table, pss_truth_table = LegendGeSim.stp_to_pss(stp_table, sim, config);
+```
+
+```julia
+plot(pss_table.waveform[1:10], size = (1000, 600), lw = 2, legend = false)
+```
+
+### Generate Data-Like Raw waveforms: `pss` -> `raw`
+Add Noise, Electronic Response (from PreAmp), simulate DAQ
+
+```julia
+raw_table = LegendGeSim.pss_to_raw(pss_table, pss_truth_table, config)
+```
+
+```julia
+plot(raw_table.waveform[1:10], size = (1000, 600), lw = 2, legend = false)
+```
+
+### Store it to into the LEGEND HDF5 Format:
+
+```julia
+h5open("simulated_raw_data_ssd.lh5", "w") do h5f
+    LegendHDF5IO.writedata(h5f, "raw", raw_table)
+end
+h5open("simulated_raw_data_ssd.lh5", "r") do h5f
+    display(h5f)
+end
+```
+
+# Via MJGSigGen.jl
+
+```julia
+config_siggen = LegendGeSim.load_config(detector_metadata_filename, sim_settings_siggen_filename);
+sim_siggen = LegendGeSim.simulate_fields(config_siggen);
+C_siggen = LegendGeSim.capacitance_matrix(sim_siggen)
+```
+
+```julia
+geant4_output_evt_table_siggen = LegendGeSim.read_pet(geant4_output_hit_filename) # could also in the HDF5 Format -> LegendTextIO.jl & LegendHDF5IO.jl
+stp_table_siggen = LegendGeSim.pet_to_stp(geant4_output_evt_table_siggen, sim_siggen);
+pss_table_siggen, pss_truth_table_siggen = LegendGeSim.stp_to_pss(stp_table_siggen, sim_siggen, config_siggen);
+raw_table_siggen = LegendGeSim.pss_to_raw(pss_table_siggen, pss_truth_table_siggen, config_siggen)
+```
+
+```julia
+ievt = 1
+plot(raw_table.waveform[ievt], size = (1000, 600), lw = 2, label = "SSD")
+plot!(raw_table_siggen.waveform[ievt], size = (1000, 600), lw = 2, label = "SigGen")
 ```
 
 ```julia

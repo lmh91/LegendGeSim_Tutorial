@@ -16,6 +16,11 @@
 /registries
 /prefs
 
+undepleted.txt
+
+*.json
+*.lh5
+*.csv
 *.dll
 *.so
 *.so.*
