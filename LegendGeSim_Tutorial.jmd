@@ -27,7 +27,7 @@ gr(size = (1000, 600),
 
 We need 3 input files:
 1) Detector meta data configuration file
-2) Energy depositions hits (e.g. output from G4Simple)
+2) Geant4 Output file
 3) LegendGeSim-configuration file
 
 ```julia
@@ -100,10 +100,10 @@ plot(geant4_output_evt_table, size = (1000, 1000))
 ```
 
 ### Preprocessing of the events: `pet` -> `stp` 
-In case of SSD: Filters depositions not located inside the detector
+E.g. clustering
 
 ```julia
-stp_table = LegendGeSim.pet_to_stp(geant4_output_evt_table, sim);
+stp_table = LegendGeSim.pet_to_stp(geant4_output_evt_table, sim)
 ```
 
 ### Simulation of charge drifts through the detector and generate signals (waveforms): `stp` -> `pss`
@@ -182,11 +182,179 @@ raw_table_siggen = LegendGeSim.pss_to_raw(pss_table_siggen, pss_truth_table_sigg
 ```
 
 ```julia
-ievt = 1
+ievt = 2
 plot(raw_table.waveform[ievt], size = (1000, 600), lw = 2, label = "SSD", legend = :topleft)
 plot!(raw_table_siggen.waveform[ievt], size = (1000, 600), lw = 2, label = "SigGen")
 # plot!(xlims = (32500, 35000))
 ```
 
+# What is happing in `pss_to_raw()`? Simulation of electronics and DAQ
+
+We need some Digitial Signal Processing (DSP) packages:
+
 ```julia
+using DSP, RadiationDetectorSignals, RadiationDetectorDSP
+```
+
+Lets grab a waveform from SSD (`pss_table`):
+
+```julia
+ssd_wf = pss_table.waveform[4]
+plot(ssd_wf)
+```
+
+## 1. Add baseline and flat tail
+
+SSD provides a function for that:
+
+```julia
+number_of_baseline_samples = 5000
+number_of_total_samples = 30000 
+# The total length has to be longer than the window which is recorded by the DAQ 
+# as the online trigger filter run through this waveform and we don't now exactly when it will trigger
+# Also, the sampling frequency of the digitazation has to be taken into account here
+wf_ext = SSD.add_baseline_and_extend_tail(ssd_wf, number_of_baseline_samples, number_of_total_samples)
+plot(wf_ext)
+```
+
+## 2. Differentiate: Charge into Current form
+
+We will use only BiQuad filters at this stage: https://en.wikipedia.org/wiki/Digital_biquad_filter
+
+They have 5 parameters and depending on their values the BiQuad filter can be turned into all kind of special filters like RC, low pass, high pass, ....
+
+```julia
+gain = 1.0
+diff_biquad_filter = RadiationDetectorDSP.differentiator_filter(gain) # We want a gain of 1 here
+```
+
+Right now we need to strip the waveform of its units. WIP...
+
+```julia
+wf_ext_u = RDWaveform(wf_ext.time, ustrip.(wf_ext.value))
+```
+
+```julia
+filter_output = filt(diff_biquad_filter, wf_ext_u.value) # filt comes from the DSP.jl package (also the BiQuad filter itself)
+wf_current = RDWaveform(wf_ext_u.time, filter_output)
+plot(wf_current)
+```
+
+## 3. We use usually so called "Charge Sensitive Amplifier" (CSA) for our Germanium Detectors
+
+This is a combination of an RC filter and an intergrator filter, which converted the "current"-waveform back into a "charge"-waveform.
+
+Here, need to take the time differences between the waveform samples into account. This is not not the (inverse) of the sampling freuquency! 
+
+```julia
+preamp_τ_rise  = 10.0u"ns" # typical value for our PreAmps
+preamp_τ_decay = 50.0u"μs" # typical value for our PreAmps
+gain = 1.0
+
+csa_filter = RadiationDetectorDSP.simple_csa_response_filter(τ_rise, τ_decay, gain)
+
+wf_preamp = RDWaveform(wf_current.time, filt(csa_filter, wf_current.value))
+plot(wf_preamp)
+```
+
+```julia
+using Interact # lets play with the parameters
+```
+
+```julia
+@manipulate for preamp_τ_rise=1.0u"ns":1.0u"ns":100.0u"ns", preamp_τ_decay = 0.1u"μs":5.0u"μs":100.0u"μs"
+    τ_rise  = uconvert(u"ns", preamp_τ_rise)  / step(wf_current.time) 
+    τ_decay = uconvert(u"ns", preamp_τ_decay) / step(wf_current.time) 
+    gain = 1.0
+
+    csa_filter = RadiationDetectorDSP.simple_csa_response_filter(τ_rise, τ_decay, gain)
+    wf_tmp = RDWaveform(wf_current.time, filt(csa_filter, wf_current.value))
+    plot(wf_tmp)
+end
+```
+
+## 4. Amplify the signal and turn it into a voltage
+
+Right now we just scale the waveform at this stage.
+
+```julia
+gain = 0.1 # resulting waveform must be below the DAQ limit
+wf_amp = RDWaveform(wf_preamp.time, wf_preamp.value * gain)
+plot(wf_amp, label = "")
+hline!([typemax(UInt16)], label = "16-bit DAQ Limit", legend = true)
+```
+
+## 5.  Add Offset
+
+Lets say we have a 16-bit DAQ and we want the baseline to be at 10% of its range:
+
+```julia
+offset = typemax(UInt16) / 10
+wf_offset = RDWaveform(wf_amp.time, wf_amp.value .+ offset)
+plot(wf_offset)
+```
+
+## 6. Add some noise
+
+We will just add some random gaussian noise here.
+
+But LegendGeSim.jl also supports the addition of noise taken from data baselines.
+
+```julia
+using Distributions
+```
+
+```julia
+FWHM = uconvert(u"MeV", 2.0u"keV")
+DAQ_range = 6u"MeV" 
+σ = ustrip(FWHM * typemax(UInt16) / DAQ_range)
+noise_dist = Normal(0.0, σ)
+noise_vec = rand(noise_dist, length(wf_offset.value));
+```
+
+```julia
+wf_noise = RDWaveform(wf_offset.time, wf_offset.value + noise_vec)
+plot(wf_noise)
+```
+
+## 7. Simulate DAQ: Digitize
+
+```julia
+daq_sampling_freq = 250u"MHz"
+Δt = uconvert(u"ns", inv(daq_sampling_freq))
+```
+
+```julia
+wf_daq_samples = wf_noise.value[begin : Int(Δt/step(wf_noise.time)) : end]
+wf_daq_times = range(T(0)u"ns", step = Δt, length = length(wf_daq_samples))
+wf_daq = RDWaveform(wf_daq_times, wf_daq_samples)
+
+# digitize
+wf_daq = RDWaveform(wf_daq.time, UInt16.(round.(wf_daq.value, digits = 0)))
+```
+
+## 8. Simulate DAQ trigger:
+
+We use just some simple trapezoidal filter here.
+
+```julia
+threshold = 3σ
+trap_filter = LegendGeSim.TrapFilter(window_lengths = (50,50,50), threshold = threshold)
+
+t0_idx, online_energy_uncal = LegendGeSim.simulate(wf_daq, trap_filter)
+
+plot(wf_daq)
+vline!([wf_daq.time[t0_idx]])
+```
+
+# 9. Cut out the waveform depending on the trigger
+
+```julia
+daq_nsamples = 5000
+daq_baseline_samples = 1200
+wf_daq_inds = t0_idx-daq_baseline_samples:t0_idx-daq_baseline_samples+daq_nsamples-1
+@info wf_daq_inds
+
+wf_raw = RDWaveform(wf_daq.time[wf_daq_inds], wf_daq.value[wf_daq_inds])
+plot(wf_raw)
 ```
