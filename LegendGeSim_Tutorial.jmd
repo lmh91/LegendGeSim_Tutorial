@@ -20,7 +20,7 @@ gr(size = (1000, 600),
     xwiden = false,
     ywiden = true,
     legend = false,
-)
+);
 ```
 
 ## Get example configuration files and Geant4 output
@@ -66,6 +66,7 @@ config = LegendGeSim.load_config(detector_metadata_filename, sim_settings_ssd_fi
 
 ```julia
 sim = LegendGeSim.simulate_fields(config);
+# sim = LegendGeSim.simulate_fields(config, overwrite = true);
 ```
 
 ```julia
@@ -89,7 +90,7 @@ C = LegendGeSim.capacitance_matrix(sim)
 
 ## Simulate Waveforms
 
-### Load the energy depositions hits 
+### Load the energy depositions hits
 
 ```julia
 geant4_output_evt_table = LegendGeSim.read_pet(geant4_output_hit_filename) # could also in the HDF5 Format -> LegendTextIO.jl & LegendHDF5IO.jl
@@ -141,6 +142,8 @@ end
 ```
 
 # Via MJGSigGen.jl
+
+https://github.com/legend-exp/MJDSigGen.jlhttps://github.com/legend-exp/MJDSigGen.jl
 
 ```julia
 config_siggen = LegendGeSim.load_config(detector_metadata_filename, sim_settings_siggen_filename);
@@ -244,11 +247,14 @@ plot(wf_current)
 
 This is a combination of an RC filter and an intergrator filter, which converted the "current"-waveform back into a "charge"-waveform.
 
-Here, need to take the time differences between the waveform samples into account. This is not not the (inverse) of the sampling freuquency! 
+Here, we need to take the time differences between the waveform samples into account. This is not not the (inverse) of the sampling freuquency!
 
 ```julia
 preamp_τ_rise  = 10.0u"ns" # typical value for our PreAmps
 preamp_τ_decay = 50.0u"μs" # typical value for our PreAmps
+
+τ_rise  = uconvert(u"ns", preamp_τ_rise)  / step(wf_current.time) 
+τ_decay = uconvert(u"ns", preamp_τ_decay) / step(wf_current.time) 
 gain = 1.0
 
 csa_filter = RadiationDetectorDSP.simple_csa_response_filter(τ_rise, τ_decay, gain)
@@ -326,7 +332,7 @@ daq_sampling_freq = 250u"MHz"
 
 ```julia
 wf_daq_samples = wf_noise.value[begin : Int(Δt/step(wf_noise.time)) : end]
-wf_daq_times = range(T(0)u"ns", step = Δt, length = length(wf_daq_samples))
+wf_daq_times = range(0.0u"ns", step = Δt, length = length(wf_daq_samples))
 wf_daq = RDWaveform(wf_daq_times, wf_daq_samples)
 
 # digitize
@@ -353,8 +359,10 @@ vline!([wf_daq.time[t0_idx]])
 daq_nsamples = 5000
 daq_baseline_samples = 1200
 wf_daq_inds = t0_idx-daq_baseline_samples:t0_idx-daq_baseline_samples+daq_nsamples-1
-@info wf_daq_inds
 
 wf_raw = RDWaveform(wf_daq.time[wf_daq_inds], wf_daq.value[wf_daq_inds])
-plot(wf_raw)
+plot(wf_raw, title = "raw-data like waveform")
+```
+
+```julia
 ```
