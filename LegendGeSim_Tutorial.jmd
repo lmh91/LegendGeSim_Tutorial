@@ -6,9 +6,21 @@ using LegendGeSim
 using LegendTestData
 using LegendGeSim: SolidStateDetectors as SSD
 using LegendHDF5IO
-using Plots
+using Plots, Measures
 using HDF5
 using Unitful
+gr(size = (1000, 600),
+    left_margin = 1cm,
+    bottom_margin = 1cm,
+    right_margin = 1cm,
+    top_margin = 0.1cm,
+    grid = 0.5,
+    framestyle = :box,
+    lw = 2,
+    xwiden = false,
+    ywiden = true,
+    legend = false,
+)
 ```
 
 ## Get example configuration files and Geant4 output
@@ -33,6 +45,18 @@ cp(joinpath(LegendGeSimExampleConfigFolder, sim_settings_ssd_filename), sim_sett
 cp(joinpath(LegendGeSimExampleConfigFolder, sim_settings_siggen_filename), sim_settings_siggen_filename, force = true);
 ```
 
+## Legend Detector Metadata Files
+
+https://github.com/legend-exp/legend-metadata/blob/master/hardware/detectors/
+
+1. https://github.com/legend-exp/legend-metadata/blob/master/hardware/detectors/detector-metadata_1.pdf
+2. https://github.com/legend-exp/legend-metadata/blob/master/hardware/detectors/detector-metadata_2.pdf
+3. https://github.com/legend-exp/legend-metadata/blob/master/hardware/detectors/detector-metadata_3.pdf
+4. https://github.com/legend-exp/legend-metadata/blob/master/hardware/detectors/detector-metadata_4.pdf
+5. https://github.com/legend-exp/legend-metadata/blob/master/hardware/detectors/detector-metadata_5.pdf
+6. https://github.com/legend-exp/legend-metadata/blob/master/hardware/detectors/detector-metadata_6.pdf
+7. https://github.com/legend-exp/legend-metadata/blob/master/hardware/detectors/detector-metadata_7.pdf
+
 ## Load the configuration Files
 
 ```julia
@@ -50,14 +74,12 @@ plot(
     plot(sim.point_types, full_det = true),
     plot(sim.electric_potential, full_det = true),
     begin
-        plot(sim.electric_field, full_det = true, φ = 0u"°")
-        SSD.plot_electric_fieldlines!(sim, full_det = true, φ = 0.0)
+        plot(sim.electric_field, full_det = true)
+        SSD.plot_electric_fieldlines!(sim, full_det = true)
     end,
     plot(sim.weighting_potentials[1], full_det = true),
     plot(sim.weighting_potentials[2], full_det = true),
-    size = (1000, 1400),
-    layout = (3, 2),
-    full_det = true
+    size = (1000, 1400), layout = (3, 2)
 )
 ```
 
@@ -74,7 +96,7 @@ geant4_output_evt_table = LegendGeSim.read_pet(geant4_output_hit_filename) # cou
 ```
 
 ```julia
-plot(geant4_output_evt_table, size = (1200, 1200))
+plot(geant4_output_evt_table, size = (1000, 1000))
 ```
 
 ### Preprocessing of the events: `pet` -> `stp` 
@@ -123,7 +145,33 @@ end
 ```julia
 config_siggen = LegendGeSim.load_config(detector_metadata_filename, sim_settings_siggen_filename);
 sim_siggen = LegendGeSim.simulate_fields(config_siggen);
+```
+
+### Plotting the fields:
+There are conversion functions of the electric potential and weighting potential to the corresponding SSD types.
+Thus, we can use the plotting recipes from SSD to also easily plot the fields calculated with FieldGen.
+
+```julia
+e_pot = SSD.ElectricPotential(sim_siggen);
+w_pot = SSD.WeightingPotential(sim_siggen);
+```
+
+```julia
+plot(
+    plot(e_pot, full_det = true, title = "Epot via FieldGen"),
+    plot(w_pot, full_det = true, title = "Wpot via FieldGen"),
+    size = (1000, 500), layout = (1, 2)
+)
+```
+
+## Capacitance via FieldGen:
+
+```julia
 C_siggen = LegendGeSim.capacitance_matrix(sim_siggen)
+```
+
+```julia
+C # Capacitance calculated via SSD (see cells above)
 ```
 
 ```julia
@@ -135,8 +183,9 @@ raw_table_siggen = LegendGeSim.pss_to_raw(pss_table_siggen, pss_truth_table_sigg
 
 ```julia
 ievt = 1
-plot(raw_table.waveform[ievt], size = (1000, 600), lw = 2, label = "SSD")
+plot(raw_table.waveform[ievt], size = (1000, 600), lw = 2, label = "SSD", legend = :topleft)
 plot!(raw_table_siggen.waveform[ievt], size = (1000, 600), lw = 2, label = "SigGen")
+# plot!(xlims = (32500, 35000))
 ```
 
 ```julia
