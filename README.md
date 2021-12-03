@@ -14,7 +14,6 @@ Depends on your setup.
 ```bash
 julia -e 'using Pkg; pkg"registry add General https://github.com/legend-exp/LegendJuliaRegistry.git"'
 julia --project=. -e 'using Pkg; pkg"instantiate; precompile"'
-julia --project=. -e 'using Pkg; Pkg.build("MJDSigGen");'
 ```
 
 The package `IJulia.jl` needs to be installed and build in your
