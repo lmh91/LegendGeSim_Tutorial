@@ -31,7 +31,7 @@ We need 3 input files:
 3) LegendGeSim-configuration file
 
 ```julia
-testdata_path = joinpath(LegendTestData.legend_test_data_path(), "data", "ldsim")
+testdata_path = joinpath(LegendTestData.legend_test_data_path(), "data", "ldsim") # First time: you are asked to download the test data
 LegendGeSimExampleConfigFolder = joinpath(dirname(dirname(pathof(LegendGeSim))), "examples/configs")
 
 detector_metadata_filename = "invcoax-metadata.json"
