@@ -57,11 +57,12 @@ https://github.com/legend-exp/legend-metadata/blob/master/hardware/detectors/
 6. https://github.com/legend-exp/legend-metadata/blob/master/hardware/detectors/detector-metadata_6.pdf
 7. https://github.com/legend-exp/legend-metadata/blob/master/hardware/detectors/detector-metadata_7.pdf
 
+# Simulation via SolidStateDetectors.jl
+
 ## Load the configuration Files
 
 ```julia
 config = LegendGeSim.load_config(detector_metadata_filename, sim_settings_ssd_filename);
-# config = LegendGeSim.load_config(detector_metadata_filename, sim_settings_siggen_filename);
 ```
 
 ```julia
@@ -185,7 +186,7 @@ raw_table_siggen = LegendGeSim.pss_to_raw(pss_table_siggen, pss_truth_table_sigg
 ```
 
 ```julia
-ievt = 2
+ievt = 1
 plot(raw_table.waveform[ievt], size = (1000, 600), lw = 2, label = "SSD", legend = :topleft)
 plot!(raw_table_siggen.waveform[ievt], size = (1000, 600), lw = 2, label = "SigGen")
 # plot!(xlims = (32500, 35000))
