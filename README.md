@@ -12,7 +12,9 @@ Depends on your setup.
 ## 3) Install the required packages and precompile them
 
 ```bash
+julia -e 'using Pkg; pkg"registry add General https://github.com/legend-exp/LegendJuliaRegistry.git"'
 julia --project=. -e 'using Pkg; pkg"instantiate; precompile"'
+julia --project=. -e 'using Pkg; Pkg.build("MJDSigGen");'
 ```
 
 ## 4) Create the notebook file
