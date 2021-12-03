@@ -17,6 +17,9 @@ julia --project=. -e 'using Pkg; pkg"instantiate; precompile"'
 julia --project=. -e 'using Pkg; Pkg.build("MJDSigGen");'
 ```
 
+The package `IJulia.jl` needs to be installed and build in your
+global default Julia Environment!
+
 ## 4) Create the notebook file
 
 ```bash
